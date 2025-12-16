@@ -1,4 +1,7 @@
 """Main processing pipeline for booking analysis"""
+# Windows compatibility fix - must be imported before any PySpark imports
+import src.utils.pyspark_windows_fix  # noqa: F401
+
 from typing import List
 
 from pyspark.sql import SparkSession
@@ -14,7 +17,7 @@ from src.processing.filters import (
     filter_confirmed_status
 )
 from src.processing.aggregation import aggregate_passengers_by_country_day_season
-from src.utils.spark_utils import create_spark_session
+from src.utils.spark_utils import create_spark_session, stop_spark_session
 
 import logging
 
@@ -215,12 +218,10 @@ def aggregate_passenger_statistics(
 
 def cleanup_spark_session(spark: SparkSession) -> None:
     """
-    Clean up Spark session resources.
+    Clean up Spark session resources gracefully.
     
     Args:
         spark: SparkSession instance to stop
     """
-    logger.debug("Cleaning up Spark session...")
-    spark.stop()
-    logger.debug("Spark session stopped")
+    stop_spark_session(spark)
 

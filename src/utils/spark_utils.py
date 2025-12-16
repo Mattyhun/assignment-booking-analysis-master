@@ -1,10 +1,14 @@
 """Spark utility functions"""
+# Windows compatibility fix - must be imported before any PySpark imports
+import src.utils.pyspark_windows_fix  # noqa: F401
+
 import os
 import platform
 import subprocess
 from pathlib import Path
-from pyspark.sql import SparkSession
 import logging
+
+from pyspark.sql import SparkSession
 
 logger = logging.getLogger(__name__)
 
@@ -200,16 +204,34 @@ def create_spark_session(app_name: str = "KLM Booking Analysis") -> SparkSession
         logger.error(str(e))
         raise
     
-    # Verify Java version
+    # Set Python executable for PySpark (fixes "python3" not found on Windows)
+    import sys
+    python_executable = sys.executable
+    os.environ['PYSPARK_PYTHON'] = python_executable
+    os.environ['PYSPARK_DRIVER_PYTHON'] = python_executable
+    logger.debug(f"Set PySpark Python executable: {python_executable}")
+    
+    # Verify Java version and installation
     try:
+        java_exe = Path(java_home) / 'bin' / ('java.exe' if platform.system() == "Windows" else 'java')
+        if not java_exe.exists():
+            raise RuntimeError(f"Java executable not found at {java_exe}")
+        
         result = subprocess.run(
-            ['java', '-version'],
+            [str(java_exe), '-version'],
             capture_output=True,
-            text=True
+            text=True,
+            timeout=10
         )
         # java -version outputs to stderr
         version_line = result.stderr.split('\n')[0] if result.stderr else 'OK'
         logger.debug(f"Java version: {version_line}")
+        
+        # Verify Java can actually run (check for security file issues)
+        if result.returncode != 0:
+            logger.warning(f"Java version check returned non-zero exit code: {result.returncode}")
+    except subprocess.TimeoutExpired:
+        logger.warning("Java version check timed out")
     except Exception as e:
         logger.warning(f"Could not verify Java version: {e}")
     
@@ -219,9 +241,14 @@ def create_spark_session(app_name: str = "KLM Booking Analysis") -> SparkSession
     builder = builder.config("spark.sql.adaptive.enabled", "true")
     builder = builder.config("spark.sql.adaptive.coalescePartitions.enabled", "true")
     
-    # Set Java home explicitly for Spark
-    builder = builder.config("spark.driver.extraJavaOptions", f"-Djava.home={java_home}")
-    builder = builder.config("spark.executor.extraJavaOptions", f"-Djava.home={java_home}")
+    # Set Java home and Python executable for Spark
+    # Note: JAVA_HOME is already set as environment variable above, which Spark will use
+    # We also set it in Spark config for executor processes
+    builder = builder.config("spark.executorEnv.JAVA_HOME", java_home)
+    
+    # Set Python executable in Spark config
+    builder = builder.config("spark.executorEnv.PYSPARK_PYTHON", python_executable)
+    builder = builder.config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", python_executable)
     
     # Windows-specific configuration
     if platform.system() == "Windows":
@@ -238,6 +265,14 @@ def create_spark_session(app_name: str = "KLM Booking Analysis") -> SparkSession
         builder = builder.config("spark.driver.host", "localhost")
         builder = builder.config("spark.driver.port", "0")  # Use random port
         
+        # Additional Windows-specific Java configuration
+        # Ensure Java path is properly set and doesn't cause security file issues
+        java_bin_path = str(Path(java_home) / 'bin')
+        builder = builder.config("spark.executorEnv.PATH", f"{java_bin_path};{os.environ.get('PATH', '')}")
+        
+        # Set master to local to avoid cluster-related issues on Windows
+        builder = builder.master("local[*]")
+        
         logger.debug("Applied Windows-specific Spark configuration")
     
     # For HDFS support
@@ -251,5 +286,47 @@ def create_spark_session(app_name: str = "KLM Booking Analysis") -> SparkSession
     spark = builder.getOrCreate()
     logger.debug(f"Spark session created: {spark.version}")
     return spark
+
+
+def stop_spark_session(spark: SparkSession) -> None:
+    """
+    Stop Spark session gracefully with proper cleanup.
+    
+    On Windows, Spark processes sometimes don't shut down cleanly,
+    so we ensure proper cleanup of both SparkSession and SparkContext
+    and give processes time to shut down gracefully.
+    
+    Args:
+        spark: SparkSession instance to stop
+    """
+    import time
+    
+    try:
+        logger.debug("Stopping Spark session...")
+        
+        # Stop SparkContext explicitly first (if available)
+        try:
+            spark_context = spark.sparkContext
+            if spark_context:
+                spark_context.stop()
+        except Exception as e:
+            logger.debug(f"Error stopping SparkContext: {e}")
+        
+        # Stop SparkSession
+        spark.stop()
+        
+        # On Windows, give processes a moment to shut down gracefully
+        # This helps prevent Windows from forcefully terminating processes
+        if platform.system() == "Windows":
+            time.sleep(0.5)
+        
+        logger.debug("Spark session stopped successfully")
+    except Exception as e:
+        logger.warning(f"Error during Spark cleanup: {e}")
+        # Try to stop anyway
+        try:
+            spark.stop()
+        except Exception:
+            pass
 
 

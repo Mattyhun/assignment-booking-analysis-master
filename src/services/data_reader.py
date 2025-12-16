@@ -1,4 +1,7 @@
 """Data reader service for local and HDFS file access"""
+# Windows compatibility fix - must be imported before any PySpark imports
+import src.utils.pyspark_windows_fix  # noqa: F401
+
 import json
 from pathlib import Path
 from typing import Iterator, Optional

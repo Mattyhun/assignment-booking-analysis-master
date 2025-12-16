@@ -1,4 +1,7 @@
 """Main entry point for KLM Booking Analysis"""
+# Windows compatibility fix - must be imported before any PySpark imports
+import src.utils.pyspark_windows_fix  # noqa: F401
+
 import logging
 import sys
 from typing import List
@@ -11,7 +14,7 @@ from src.processing.pipeline import run_booking_analysis_pipeline
 from src.processing.pipeline_spark import run_booking_analysis_pipeline_spark
 from src.streaming.realtime_analyzer import run_simple_streaming_demo
 from src.utils.output import write_report_csv, write_report_json
-from src.utils.spark_utils import create_spark_session
+from src.utils.spark_utils import create_spark_session, stop_spark_session
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +189,7 @@ def run_streaming_mode(config: Config) -> None:
     try:
         run_simple_streaming_demo(spark, config)
     finally:
-        spark.stop()
+        stop_spark_session(spark)
 
 
 def display_analysis_summary(report_rows: List[ReportRow]) -> None:

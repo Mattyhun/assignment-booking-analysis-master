@@ -12,7 +12,7 @@ from src.processing.aggregation_spark import (
     aggregate_passengers_by_country_day_season_spark,
     convert_to_report_rows
 )
-from src.utils.spark_utils import create_spark_session
+from src.utils.spark_utils import create_spark_session, stop_spark_session
 
 import logging
 
@@ -98,6 +98,5 @@ def run_booking_analysis_pipeline_spark(config: Config) -> List[ReportRow]:
         return report_rows
         
     finally:
-        spark.stop()
-        logger.debug("Spark session stopped")
+        stop_spark_session(spark)
 

@@ -79,10 +79,11 @@ def _write_csv_to_hdfs(report_rows: List[ReportRow], hdfs_path: str) -> None:
     # Get or create Spark session
     spark = SparkSession.getActiveSession()
     if not spark:
-        from src.utils.spark_utils import create_spark_session
+        from src.utils.spark_utils import create_spark_session, stop_spark_session
         spark = create_spark_session("HDFS Output Writer")
         created_session = True
     else:
+        from src.utils.spark_utils import stop_spark_session
         created_session = False
     
     try:
@@ -123,7 +124,7 @@ def _write_csv_to_hdfs(report_rows: List[ReportRow], hdfs_path: str) -> None:
         
     finally:
         if created_session:
-            spark.stop()
+            stop_spark_session(spark)
 
 
 def write_report_json(report_rows: List[ReportRow], output_path: str) -> None:
@@ -170,10 +171,11 @@ def _write_json_to_hdfs(report_rows: List[ReportRow], hdfs_path: str) -> None:
     # Get or create Spark session
     spark = SparkSession.getActiveSession()
     if not spark:
-        from src.utils.spark_utils import create_spark_session
+        from src.utils.spark_utils import create_spark_session, stop_spark_session
         spark = create_spark_session("HDFS Output Writer")
         created_session = True
     else:
+        from src.utils.spark_utils import stop_spark_session
         created_session = False
     
     try:
@@ -190,6 +192,6 @@ def _write_json_to_hdfs(report_rows: List[ReportRow], hdfs_path: str) -> None:
         
     finally:
         if created_session:
-            spark.stop()
+            stop_spark_session(spark)
 
 
