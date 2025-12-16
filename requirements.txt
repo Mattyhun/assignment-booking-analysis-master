@@ -1,0 +1,16 @@
+# Python Dependencies
+pyspark>=3.5.0
+pydantic>=2.0.0
+pytz>=2023.3
+click>=8.1.0
+pytest>=7.4.0
+
+# System Requirements
+# Java 17+ is required for PySpark 3.5+
+# The application will automatically detect and use Java 17+ if available
+# Installation:
+#   macOS:   brew install openjdk@17
+#   Ubuntu:  sudo apt-get install openjdk-17-jdk
+#   Or download from: https://adoptium.net/
+
+
