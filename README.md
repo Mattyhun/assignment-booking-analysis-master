@@ -8,6 +8,16 @@ Analyzes KLM booking data to identify the most popular destination countries by 
 - Java 17+ (automatically detected by the application)
 - PySpark (installed via requirements.txt)
 
+### Windows-Specific Notes
+
+If you're running on Windows, the application automatically configures Spark to work on Windows. However, you may need to:
+
+1. **Install Java 17+**: Download from [Adoptium](https://adoptium.net/) or use [Chocolatey](https://chocolatey.org/): `choco install openjdk17`
+2. **Set JAVA_HOME**: Set the `JAVA_HOME` environment variable to your Java installation path (e.g., `C:\Program Files\Eclipse Adoptium\jdk-17.0.x-hotspot`)
+3. **WinUtils (Optional)**: For HDFS support on Windows, you may need to install WinUtils. However, local file processing works without it.
+
+The application automatically handles Windows-specific Spark configuration (TCP sockets instead of Unix sockets).
+
 ## Installation
 
 ```bash

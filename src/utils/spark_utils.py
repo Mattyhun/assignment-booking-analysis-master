@@ -1,5 +1,6 @@
 """Spark utility functions"""
 import os
+import platform
 import subprocess
 from pathlib import Path
 from pyspark.sql import SparkSession
@@ -82,34 +83,68 @@ def find_java_home(min_version: int = 17) -> str:
         logger.debug(f"Could not use java_home utility: {e}")
         pass
     
-    # Try common Java installation paths
-    common_paths = [
-        '/Library/Java/JavaVirtualMachines',
-        '/usr/lib/jvm',
-        '/opt/java',
-    ]
+    # Try common Java installation paths (platform-specific)
+    if platform.system() == "Windows":
+        common_paths = [
+            os.path.join(os.environ.get('ProgramFiles', 'C:\\Program Files'), 'Eclipse Adoptium'),
+            os.path.join(os.environ.get('ProgramFiles', 'C:\\Program Files'), 'Java'),
+            os.path.join(os.environ.get('ProgramFiles(x86)', 'C:\\Program Files (x86)'), 'Java'),
+            'C:\\Program Files\\Eclipse Adoptium',
+            'C:\\Program Files\\Java',
+        ]
+    else:
+        common_paths = [
+            '/Library/Java/JavaVirtualMachines',
+            '/usr/lib/jvm',
+            '/opt/java',
+        ]
     
     for base_path in common_paths:
-        if Path(base_path).exists():
-            for jvm_path in Path(base_path).iterdir():
-                java_home_path = jvm_path / 'Contents' / 'Home' if (jvm_path / 'Contents').exists() else jvm_path
-                if (java_home_path / 'bin' / 'java').exists():
+        base_path_obj = Path(base_path)
+        if base_path_obj.exists():
+            for jvm_path in base_path_obj.iterdir():
+                # Windows: Java is usually directly in the path (e.g., jdk-17.0.x)
+                # macOS/Linux: May have Contents/Home structure
+                if platform.system() == "Windows":
+                    java_home_path = jvm_path
+                else:
+                    java_home_path = jvm_path / 'Contents' / 'Home' if (jvm_path / 'Contents').exists() else jvm_path
+                
+                java_exe = java_home_path / 'bin' / 'java.exe' if platform.system() == "Windows" else java_home_path / 'bin' / 'java'
+                if java_exe.exists():
                     java_version = _get_java_version(str(java_home_path))
                     if java_version and java_version >= min_version:
                         logger.debug(f"Found Java {java_version} at: {java_home_path}")
                         return str(java_home_path)
     
+    # Platform-specific error message
+    if platform.system() == "Windows":
+        install_instructions = (
+            f"Please install Java {min_version} or higher and set JAVA_HOME environment variable. "
+            f"Download from https://adoptium.net/ or use Chocolatey: choco install openjdk{min_version}"
+        )
+    elif platform.system() == "Darwin":  # macOS
+        install_instructions = (
+            f"Please install Java {min_version} or higher and set JAVA_HOME environment variable. "
+            f"On macOS, you can install it with: brew install openjdk@{min_version}"
+        )
+    else:  # Linux
+        install_instructions = (
+            f"Please install Java {min_version} or higher and set JAVA_HOME environment variable. "
+            f"On Ubuntu/Debian: sudo apt-get install openjdk-{min_version}-jdk"
+        )
+    
     raise RuntimeError(
-        f"Java {min_version}+ is required for PySpark. "
-        f"Please install Java {min_version} or higher and set JAVA_HOME environment variable. "
-        f"On macOS, you can install it with: brew install openjdk@{min_version}"
+        f"Java {min_version}+ is required for PySpark. {install_instructions}"
     )
 
 
 def _get_java_version(java_home: str) -> int:
     """Get Java version number from JAVA_HOME"""
     try:
-        java_bin = Path(java_home) / 'bin' / 'java'
+        # Windows uses java.exe, Unix uses java
+        java_exe_name = 'java.exe' if platform.system() == "Windows" else 'java'
+        java_bin = Path(java_home) / 'bin' / java_exe_name
         if not java_bin.exists():
             return None
         
@@ -156,8 +191,9 @@ def create_spark_session(app_name: str = "KLM Booking Analysis") -> SparkSession
         # Also update PATH to use this Java
         java_bin = Path(java_home) / 'bin'
         current_path = os.environ.get('PATH', '')
+        path_separator = ';' if platform.system() == "Windows" else ':'
         if str(java_bin) not in current_path:
-            os.environ['PATH'] = f"{java_bin}:{current_path}"
+            os.environ['PATH'] = f"{java_bin}{path_separator}{current_path}"
         
         logger.debug(f"Configured Java: {java_home}")
     except RuntimeError as e:
@@ -186,6 +222,23 @@ def create_spark_session(app_name: str = "KLM Booking Analysis") -> SparkSession
     # Set Java home explicitly for Spark
     builder = builder.config("spark.driver.extraJavaOptions", f"-Djava.home={java_home}")
     builder = builder.config("spark.executor.extraJavaOptions", f"-Djava.home={java_home}")
+    
+    # Windows-specific configuration
+    if platform.system() == "Windows":
+        # Use TCP sockets instead of Unix domain sockets on Windows
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        spark_local_dir = os.path.join(temp_dir, "spark-temp")
+        os.makedirs(spark_local_dir, exist_ok=True)
+        
+        builder = builder.config("spark.local.dir", spark_local_dir)
+        builder = builder.config("spark.sql.warehouse.dir", os.path.join(spark_local_dir, "warehouse"))
+        
+        # Disable Unix socket usage on Windows
+        builder = builder.config("spark.driver.host", "localhost")
+        builder = builder.config("spark.driver.port", "0")  # Use random port
+        
+        logger.debug("Applied Windows-specific Spark configuration")
     
     # For HDFS support
     try:
